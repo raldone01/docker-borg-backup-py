@@ -20,6 +20,7 @@ repo_general_defaults = {
   'keep_yearly': 1,
   'compact': True,
   'prune': True,
+  'dry_run': False,
 }
 
 borg_path = '/usr/bin/borg'
@@ -49,13 +50,13 @@ def td_format(td, pad=True):
     return f"{hours}:{minutes}:{seconds}"
 
 class Repo:
-  def __init__(self, name, config):
+  def __init__(self, name, config, config_args):
     self.name = name
     # add logger with name
     self.logger = logging.getLogger(f"repo.{name}")
-    self._load_extract_config(config)
+    self._load_extract_config(config, config_args)
 
-  def _load_extract_config(self, config):
+  def _load_extract_config(self, config, config_args):
     self.logger.info(f"Loading config for repo \"{self.name}\"")
 
     # cron str
@@ -139,6 +140,12 @@ class Repo:
 
     self.hostname = self._load_config_key(config, 'hostname', validate_string)
 
+    self.dry_run = self._load_config_key(config, 'dry_run', validate_bool)
+    if config_args.dry_run:
+      self.dry_run = True
+    if self.dry_run:
+      self.logger.info(f"Dry run enabled")
+
   def _load_config_key(self, config, key, validator=None, default=None):
     general_config = config['repo_general']
     repo_config = config['repo'][self.name]
@@ -219,6 +226,8 @@ class Repo:
       '--compression', 'zstd',
       '--exclude-caches',
     ]
+    if self.dry_run:
+      cmd.append('--dry-run')
     if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
       cmd.append('--verbose')
     for file_exclude in self.files_exclude:
@@ -274,6 +283,8 @@ class Repo:
       '--keep-monthly', str(self.keep_monthly),
       '--keep-yearly', str(self.keep_yearly),
     ]
+    if self.dry_run:
+      cmd.append('--dry-run')
     if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
       cmd.append('--verbose')
 
@@ -316,6 +327,8 @@ class Repo:
       borg_path,
       'compact',
     ]
+    if self.dry_run:
+      cmd.append('--dry-run')
     if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
       cmd.append('--verbose')
 
@@ -365,7 +378,7 @@ class BackupManager:
     self.load_config_file()
     self.repos = []
     for repo_name in self.get_repo_names():
-      self.repos.append(Repo(repo_name, self.config))
+      self.repos.append(Repo(repo_name, self.config, config_args))
   async def run(self):
     while True:
       for repo in self.repos:
