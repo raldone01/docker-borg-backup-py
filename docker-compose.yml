@@ -1,0 +1,24 @@
+version: '3.8'
+services:
+  backup_container:
+    restart: unless-stopped
+    build:
+      context: im_backup_container
+    init: true
+    volumes:
+      - ./test_files:/host:ro
+      - ./container_volumes/.cache_borg/:/root/.cache/borg
+      - ./container_volumes/log:/var/log
+      - ./secrets/backup_known_hosts:/root/.ssh/known_hosts:ro
+      - ./secrets/config.toml:/etc/py_borg_back/config.toml:ro
+    secrets:
+      - borg_pass
+      - backup_ssh_key_py_borg_back_1
+      - backup_ssh_key_py_borg_back_2
+secrets:
+  borg_pass:
+    file: ./secrets/borg_pass
+  backup_ssh_key_py_borg_back_1:
+    file: ./secrets/backup_ssh_key_py_borg_back_1
+  backup_ssh_key_py_borg_back_2:
+    file: ./secrets/backup_ssh_key_py_borg_back_2

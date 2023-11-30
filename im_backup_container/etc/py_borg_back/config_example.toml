@@ -1,0 +1,67 @@
+[repo_general]
+# m h dom mon dow
+cron_interval = "R 4 * * *"
+keep_daily = 7
+keep_weekly = 4
+keep_monthly = 2
+keep_yearly = 1
+compact = false
+borg_pass_file = "/run/secrets/borg_pass"
+hostname = "argon"
+files_include = [
+  "srv",
+  "etc",
+  "var",
+  "home",
+  "root",
+  "var",
+  "opt",
+  "usr/local",
+  "boot",
+  "efi",
+]
+files_exclude = [
+  'home/*/.cache/*',
+  'home/*/.rustup',
+  'home/*/.cargo',
+  'home/*/.npm',
+  'home/*/.spack',
+  'home/*/.vscode-insiders',
+  'home/*/.vscode-server-insiders',
+  'home/*/.vscode',
+  'home/*/.vscode-server',
+  'home/*/.conda',
+  'home/*/.nv',
+  'var/tmp/*',
+  'var/lib',
+  'var/cache',
+  'var/run/',
+  'var/tmp',
+  'var/log',
+  'opt/intel',
+  'var/intel',
+  '*/.snapshots',
+  '*/__pycache__',
+]
+
+[hash_deep]
+enabled = true
+algorithm = "sha512"
+output = "/forensics/"
+files_include = ["*"]
+files_exclude = []
+
+[repo.py_borg_back_1]
+enabled = true
+keep_daily = 7
+keep_weekly = 4
+keep_monthly = 2
+keep_yearly = 0
+ssh_key_file = "/run/secrets/backup_ssh_key_py_borg_back_1"
+repo_url = "ssh://<id>@<id>.repo.borgbase.com/./repo"
+[repo.py_borg_back_2]
+enabled = true
+prune = true
+compact = false
+ssh_key_file = "/run/secrets/backup_ssh_key_py_borg_back_2"
+repo_url = "ssh://<id>@<id>.repo.borgbase.com/./repo"
