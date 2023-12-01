@@ -11,6 +11,8 @@
 * Support hooks (pre/post backup)
 * Handle ssh host keys better
 * Dedupe code for backup and prune and compact subprocess
+* Support stopping with CTRL-C and handle signals
+* Fix log encoding `b' and \n`
 
 ## Information
 

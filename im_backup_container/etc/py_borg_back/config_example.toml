@@ -21,7 +21,7 @@ files_include = [
   "efi",
 ]
 files_exclude = [
-  'home/*/.cache/*',
+  'home/*/.cache',
   'home/*/.rustup',
   'home/*/.cargo',
   'home/*/.npm',
@@ -32,6 +32,14 @@ files_exclude = [
   'home/*/.vscode-server',
   'home/*/.conda',
   'home/*/.nv',
+  'home/*/.local/share/nvm',
+  'home/*/.local/share/baloo',
+  'home/*/.local/share/containers/cache',
+  'home/*/.local/lib/python*',
+  'home/*/.local/lib/pipx',
+  'home/*/.config/Code - Insiders',
+  'home/*/.config/Code',
+  'home/*/**/build/cache',
   'var/tmp/*',
   'var/lib',
   'var/cache',

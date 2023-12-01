@@ -190,6 +190,51 @@ class Repo:
     env['BORG_REPO'] = self.repo_url
     return env
 
+  async def _run_async_subprocess(self, cmd, log_prefix):
+    """
+    Run an async subprocess command and handle logging.
+
+    Args:
+        cmd (list[str]): The command and its arguments to be executed.
+
+    Returns:
+        int: The return code of the subprocess.
+    """
+    env = self._create_borg_env()
+    borg_logger = logging.getLogger(f"repo.{self.name}.borg.{log_prefix}")
+    now = datetime.now()
+
+    try:
+      process = await asyncio.subprocess.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+        cwd="/host",
+      )
+
+      await asyncio.gather(
+        read_stream(process.stdout, lambda line: borg_logger.info(line.decode())),
+        read_stream(process.stderr, lambda line: borg_logger.error(line.decode())),
+      )
+
+      await process.wait()
+      elapsed = datetime.now() - now
+      elapsed_str = td_format(elapsed)
+
+      if process.returncode != 0:
+        borg_logger.error(f"Failed to run \"{log_prefix}\" in {elapsed_str}. Exit: {process.returncode}")
+        return process.returncode
+
+      borg_logger.info(f"\"{log_prefix}\" finished in {elapsed_str}")
+      return 0
+
+    except Exception as e:
+      elapsed = datetime.now() - now
+      elapsed_str = td_format(elapsed)
+      borg_logger.exception(f"Failed to run \"{log_prefix}\" in {elapsed_str}")
+      return 1
+
   async def run_backup(self):
     if self._not_enabled():
       return 0
@@ -213,9 +258,6 @@ class Repo:
       return 0
     self.logger.info(f"Running backup create for repo \"{self.name}\"")
 
-    env = self._create_borg_env()
-    working_dir = "/host"
-
     cmd = [
       borg_path,
       'create',
@@ -238,28 +280,7 @@ class Repo:
       cmd.append(file_include)
 
     self.logger.debug(f"Running command: \"{' '.join(cmd)}\"")
-    now = datetime.now()
-    borg_logger = logging.getLogger(f"repo.{self.name}.borg.create")
-    try:
-      process = await asyncio.subprocess.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env, cwd=working_dir)
-      await asyncio.gather(
-        read_stream(process.stdout, lambda line: borg_logger.info(line)),
-        read_stream(process.stderr, lambda line: borg_logger.error(line)),
-      )
-      await process.wait()
-      elapsed = datetime.now() - now
-      elapsed_str = td_format(elapsed)
-      if process.returncode != 0:
-        self.logger.error(f"Failed to run \"borg create\" in {elapsed_str}.\n" + ic.format({"exit": process.returncode}))
-        return process.returncode
-      self.logger.info(f"\"borg create\" finished in {elapsed_str}")
-    except Exception as e:
-      elapsed = datetime.now() - now
-      elapsed_str = td_format(elapsed)
-      self.logger.exception(f"Failed to run \"borg create\" in {elapsed_str}")
-      return 1
-
-    return 0
+    return await self._run_async_subprocess(cmd, 'create')
 
   async def run_backup_prune(self):
     if self._not_enabled():
@@ -268,9 +289,6 @@ class Repo:
       self.logger.info(f"Skipping backup prune for repo \"{self.name}\"")
       return 0
     self.logger.info(f"Running backup prune for repo \"{self.name}\"")
-
-    env = self._create_borg_env()
-    working_dir = "/host"
 
     cmd = [
       borg_path,
@@ -289,28 +307,7 @@ class Repo:
       cmd.append('--verbose')
 
     self.logger.debug(f"Running command: \"{' '.join(cmd)}\"")
-    now = datetime.now()
-    borg_logger = logging.getLogger(f"repo.{self.name}.borg.prune")
-    try:
-      process = await asyncio.subprocess.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env, cwd=working_dir)
-      await asyncio.gather(
-        read_stream(process.stdout, lambda line: borg_logger.info(line)),
-        read_stream(process.stderr, lambda line: borg_logger.error(line)),
-      )
-      await process.wait()
-      elapsed = datetime.now() - now
-      elapsed_str = td_format(elapsed)
-      if process.returncode != 0:
-        self.logger.error(f"Failed to run \"borg prune\" in {elapsed_str}.\n" + ic.format({"exit": process.returncode}))
-        return process.returncode
-      self.logger.info(f"\"borg prune\" finished in {elapsed_str}")
-    except Exception as e:
-      elapsed = datetime.now() - now
-      elapsed_str = td_format(elapsed)
-      self.logger.exception(f"Failed to run \"borg prune\" in {elapsed_str}")
-      return 1
-
-    return 0
+    return await self._run_async_subprocess(cmd, 'prune')
 
   async def run_backup_compact(self):
     if self._not_enabled():
@@ -319,9 +316,6 @@ class Repo:
       self.logger.info(f"Skipping backup compact for repo \"{self.name}\"")
       return 0
     self.logger.info(f"Running backup compact for repo \"{self.name}\"")
-
-    env = self._create_borg_env()
-    working_dir = "/host"
 
     cmd = [
       borg_path,
@@ -333,28 +327,7 @@ class Repo:
       cmd.append('--verbose')
 
     self.logger.debug(f"Running command: \"{' '.join(cmd)}\"")
-    now = datetime.now()
-    borg_logger = logging.getLogger(f"repo.{self.name}.borg.compact")
-    try:
-      process = await asyncio.subprocess.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env, cwd=working_dir)
-      await asyncio.gather(
-        read_stream(process.stdout, lambda line: borg_logger.info(line)),
-        read_stream(process.stderr, lambda line: borg_logger.error(line)),
-      )
-      await process.wait()
-      elapsed = datetime.now() - now
-      elapsed_str = td_format(elapsed)
-      if process.returncode != 0:
-        self.logger.error(f"Failed to run \"borg compact\" in {elapsed_str}.\n" + ic.format({"exit": process.returncode}))
-        return process.returncode
-      self.logger.info(f"\"borg compact\" finished in {elapsed_str}")
-    except Exception as e:
-      elapsed = datetime.now() - now
-      elapsed_str = td_format(elapsed)
-      self.logger.exception(f"Failed to run \"borg compact\" in {elapsed_str}")
-      return 1
-
-    return 0
+    return await self._run_async_subprocess(cmd, 'compact')
 
 def setup_logging(config_args) -> None:
   log_level = logging.getLevelName(config_args.log_level.upper())
