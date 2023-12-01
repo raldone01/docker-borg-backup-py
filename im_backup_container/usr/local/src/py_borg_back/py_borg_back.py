@@ -4,7 +4,7 @@ import toml
 import sys
 import os
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 from croniter import croniter
 import time
 import unittest.mock as mock
@@ -62,8 +62,16 @@ class Repo:
     self.logger.info(f"Loading config for repo \"{self.name}\"")
 
     # cron str
-    self.cron_interval_str = self._load_config_key(config, 'cron_interval', croniter.is_valid)
-    self.next_run = croniter(self.cron_interval_str, datetime.now()).get_next(datetime)
+    def validate_cron_interval(cron_interval):
+      if cron_interval == False:
+        return True
+      if not croniter.is_valid(cron_interval):
+        self.logger.error(f"Cron interval \"{cron_interval}\" is not valid")
+        return False
+      return True
+    self.cron_interval_str = self._load_config_key(config, 'cron_interval', validate_cron_interval)
+    if self.cron_interval_str != False:
+      self.next_run = croniter(self.cron_interval_str, datetime.now()).get_next(datetime)
 
     def validate_keep_int(keep_int):
       if not isinstance(keep_int, int):
@@ -192,7 +200,7 @@ class Repo:
     env['BORG_REPO'] = self.repo_url
     return env
 
-  async def _run_async_subprocess(self, cmd, log_prefix):
+  async def _run_async_subprocess(self, cmd, log_prefix, stderr_is_stdout=True):
     """
     Run an async subprocess command and handle logging.
 
@@ -216,9 +224,11 @@ class Repo:
         cwd="/host",
       )
 
+      def handle_line(cb):
+        return lambda line: cb(line.decode().strip())
       await asyncio.gather(
-        read_stream(process.stdout, lambda line: borg_logger.info(line.decode())),
-        read_stream(process.stderr, lambda line: borg_logger.error(line.decode())),
+        read_stream(process.stdout, handle_line(borg_logger.info)),
+        read_stream(process.stderr, handle_line(borg_logger.info if stderr_is_stdout else borg_logger.error)),
       )
 
       self.current_subprocess = process
@@ -241,6 +251,9 @@ class Repo:
 
   async def run_backup(self):
     if self._not_enabled():
+      return 0
+    if self.cron_interval_str == False:
+      self.logger.info(f"Skipping backup for repo \"{self.name}\". No cron interval set.")
       return 0
 
     if datetime.now() < self.next_run:
@@ -366,7 +379,11 @@ class BackupManager:
     while True:
       for repo in self.repos:
         await repo.run_backup()
-      await asyncio.sleep(60)
+      next_run = min(repo.next_run if repo.next_run != None else datetime.max for repo in self.repos)
+      next_run = max(next_run, datetime.now() + timedelta(hours=12))
+      secs = (next_run - datetime.now()).total_seconds()
+      logging.debug(f"Sleeping until {next_run.strftime('%Y/%m/%d %H:%M:%S')} ({secs} seconds)")
+      await asyncio.sleep(secs)
   async def run_backup(self):
     for repo in self.repos:
       await repo.run_backup_now()
