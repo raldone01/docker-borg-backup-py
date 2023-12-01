@@ -198,7 +198,7 @@ class Repo:
     env['BORG_REPO'] = self.repo_url
     return env
 
-  async def _run_async_subprocess(self, cmd, log_prefix):
+  async def _run_async_subprocess(self, cmd, log_prefix, stderr_is_stdout=True):
     """
     Run an async subprocess command and handle logging.
 
@@ -221,9 +221,11 @@ class Repo:
         cwd="/host",
       )
 
+      def handle_line(cb):
+        return lambda line: cb(line.decode().strip())
       await asyncio.gather(
-        read_stream(process.stdout, lambda line: borg_logger.info(line.decode())),
-        read_stream(process.stderr, lambda line: borg_logger.error(line.decode())),
+        read_stream(process.stdout, handle_line(borg_logger.info)),
+        read_stream(process.stderr, handle_line(borg_logger.info if stderr_is_stdout else borg_logger.error)),
       )
 
       await process.wait()
