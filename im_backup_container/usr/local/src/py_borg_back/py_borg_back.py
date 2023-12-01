@@ -11,6 +11,7 @@ import unittest.mock as mock
 import stat
 from icecream import ic
 import asyncio
+import signal
 
 repo_general_defaults = {
   'cron_interval': 'R 0 * * *',
@@ -55,6 +56,7 @@ class Repo:
     # add logger with name
     self.logger = logging.getLogger(f"repo.{name}")
     self._load_extract_config(config, config_args)
+    self.current_subprocess = None
 
   def _load_extract_config(self, config, config_args):
     self.logger.info(f"Loading config for repo \"{self.name}\"")
@@ -204,6 +206,7 @@ class Repo:
     borg_logger = logging.getLogger(f"repo.{self.name}.borg.{log_prefix}")
     now = datetime.now()
 
+    return_code = 1
     try:
       process = await asyncio.subprocess.create_subprocess_exec(
         *cmd,
@@ -218,22 +221,23 @@ class Repo:
         read_stream(process.stderr, lambda line: borg_logger.error(line.decode())),
       )
 
+      self.current_subprocess = process
       await process.wait()
       elapsed = datetime.now() - now
       elapsed_str = td_format(elapsed)
 
       if process.returncode != 0:
         borg_logger.error(f"Failed to run \"{log_prefix}\" in {elapsed_str}. Exit: {process.returncode}")
-        return process.returncode
-
-      borg_logger.info(f"\"{log_prefix}\" finished in {elapsed_str}")
-      return 0
-
+      else:
+        borg_logger.info(f"\"{log_prefix}\" finished in {elapsed_str}")
+      return_code = process.returncode
     except Exception as e:
       elapsed = datetime.now() - now
       elapsed_str = td_format(elapsed)
       borg_logger.exception(f"Failed to run \"{log_prefix}\" in {elapsed_str}")
-      return 1
+
+    self.current_subprocess = None
+    return return_code
 
   async def run_backup(self):
     if self._not_enabled():
@@ -252,6 +256,12 @@ class Repo:
     ret_prune = await self.run_backup_prune()
     ret_compact = await self.run_backup_compact()
     return ret_create + ret_prune + ret_compact
+
+  async def stop_subprocess(self):
+    if self.current_subprocess is not None:
+      self.logger.info(f"Stopping subprocess for repo \"{self.name}\"")
+      self.current_subprocess.terminate()
+      await self.current_subprocess.wait()
 
   async def run_backup_create(self):
     if self._not_enabled():
@@ -371,6 +381,16 @@ class BackupManager:
       sys.exit(1)
   def get_repo_names(self) -> list[str]:
     return self.config['repo'].keys()
+  async def shutdown(self):
+    # Gracefully stop running tasks and subprocesses
+    for repo in self.repos:
+        await repo.stop_subprocess()
+    asyncio.get_event_loop().stop()
+
+def signal_handler(signum, frame):
+    if signum == signal.SIGTERM or signum == signal.SIGINT or signum == signal.SIGQUIT:
+      logging.info(f"Received signal {signal.strsignal(signum)}, initiating graceful shutdown...")
+      asyncio.create_task(backup_manager.shutdown())
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='Backup Manager')
@@ -389,7 +409,13 @@ if __name__ == "__main__":
 
   log_borg_version()
 
+  global backup_manager
   backup_manager = BackupManager(config_args)
+
+  signal.signal(signal.SIGTERM, signal_handler)
+  signal.signal(signal.SIGINT, signal_handler)
+  signal.signal(signal.SIGQUIT, signal_handler)
+
   if args.single_run_now:
     logging.info("Running single run now")
     asyncio.run(backup_manager.run_backup())

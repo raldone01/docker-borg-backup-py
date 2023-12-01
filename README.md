@@ -10,9 +10,8 @@
 * Support more borg options
 * Support hooks (pre/post backup)
 * Handle ssh host keys better
-* Dedupe code for backup and prune and compact subprocess
-* Support stopping with CTRL-C and handle signals
-* Fix log encoding `b' and \n`
+* Support handling SIGHUP to reload config
+* Fix log encoding `b' and \n` proper utf decoding
 
 ## Information
 
