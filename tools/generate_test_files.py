@@ -11,10 +11,13 @@ test_files = [
     'folder1/test_file_3.txt',
     'folder1/folder2/test_file_4.txt',
     'folder2/',
+    'földer/göögle.txt',
 ]
 
+base_dir = "srv"
+
 for test_file in test_files:
-    test_file_path = os.path.join(test_files_dir, test_file)
+    test_file_path = os.path.join(test_files_dir, base_dir, test_file)
     if not os.path.exists(os.path.dirname(test_file_path)):
         os.makedirs(os.path.dirname(test_file_path))
     if test_file.endswith('/'):
