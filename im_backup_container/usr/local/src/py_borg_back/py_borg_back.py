@@ -22,6 +22,8 @@ repo_general_defaults = {
   'compact': True,
   'prune': True,
   'dry_run': False,
+  'log_level': 'INFO',
+  'enabled': True,
 }
 
 borg_path = '/usr/bin/borg'
@@ -36,19 +38,30 @@ async def read_stream(stream, cb):
 
 # https://stackoverflow.com/a/77461729/4479969
 def td_format(td, pad=True):
-    try:
-        _days, parsed = str(td).split(",")
-    except ValueError:
-        hours, minutes, seconds = str(td).split(":")
-    else:
-        days = _days.split(" ")[0]
-        _hours, minutes, seconds = parsed.split(":")
-        hours = int(_hours) + int(days) * 24
+  try:
+    _days, parsed = str(td).split(",")
+  except ValueError:
+    hours, minutes, seconds = str(td).split(":")
+  else:
+    days = _days.split(" ")[0]
+    _hours, minutes, seconds = parsed.split(":")
+    hours = int(_hours) + int(days) * 24
 
-    if pad:
-        hours = hours.zfill(2)
+  if pad:
+    hours = hours.zfill(2)
 
-    return f"{hours}:{minutes}:{seconds}"
+  return f"{hours}:{minutes}:{seconds}"
+
+def validate_log_level(logger):
+  def validate_log_level_inner(log_level):
+    if not isinstance(log_level, str):
+      logger.error(f"Log level is not a string")
+      return False
+    if isinstance(logging.getLevelName(log_level.upper()), str):
+      logger.error(f"Log level \"{log_level}\" is not valid")
+      return False
+    return True
+  return validate_log_level_inner
 
 class Repo:
   def __init__(self, name, config, config_args):
@@ -59,7 +72,9 @@ class Repo:
     self.current_subprocess = None
 
   def _load_extract_config(self, config, config_args):
-    self.logger.info(f"Loading config for repo \"{self.name}\"")
+    self.logger.debug(f"Loading config for repo \"{self.name}\"")
+
+    self.logger.setLevel(self._load_config_key(config, 'log_level', validate_log_level(self.logger), config_args=config_args).upper())
 
     # cron str
     def validate_cron_interval(cron_interval):
@@ -107,7 +122,7 @@ class Repo:
     with open(borg_pass_file, 'r') as f:
       self.borg_passphrase = f.read().strip()
 
-    self.enabled = self._load_config_key(config, 'enabled', validate_bool, True)
+    self.enabled = self._load_config_key(config, 'enabled', validate_bool)
 
     def validate_ssh_key(file_path):
       if not validate_pass_file(file_path):
@@ -156,12 +171,14 @@ class Repo:
     if self.dry_run:
       self.logger.info(f"Dry run enabled")
 
-  def _load_config_key(self, config, key, validator=None, default=None):
+  def _load_config_key(self, config, key, validator=None, default=None, config_args=None):
     general_config = config['repo_general']
     repo_config = config['repo'][self.name]
 
     config_value = None
-    if key in repo_config:
+    if config_args is not None and hasattr(config_args, key):
+      config_value = getattr(config_args, key)
+    elif key in repo_config:
       config_value = repo_config[key]
     elif key in general_config:
       config_value = general_config[key]
@@ -225,7 +242,7 @@ class Repo:
       )
 
       def handle_line(cb):
-        return lambda line: cb(line.decode().strip())
+        return lambda line: cb(line.decode("utf-8").strip())
       await asyncio.gather(
         read_stream(process.stdout, handle_line(borg_logger.info)),
         read_stream(process.stderr, handle_line(borg_logger.info if stderr_is_stdout else borg_logger.error)),
@@ -352,6 +369,25 @@ class Repo:
     self.logger.debug(f"Running command: \"{' '.join(cmd)}\"")
     return await self._run_async_subprocess(cmd, 'compact')
 
+  async def run_cmd(self, cmd):
+    self.logger.info(f"Running custom command for repo \"{self.name}\"")
+
+    self.logger.debug(f"Running command: \"{' '.join(cmd)}\"")
+    return await self._run_async_subprocess(cmd, 'custom', False)
+
+  async def break_locks(self):
+    self.logger.warning(f"Breaking locks for repo \"{self.name}\"")
+
+    cmd = [
+      borg_path,
+      'break-lock',
+    ]
+    if logging.getLogger().getEffectiveLevel() == logging.DEBUG:
+      cmd.append('--verbose')
+
+    self.logger.debug(f"Running command: \"{' '.join(cmd)}\"")
+    return await self._run_async_subprocess(cmd, 'break-lock')
+
 def setup_logging(config_args) -> None:
   log_level = logging.getLevelName(config_args.log_level.upper())
   logging.basicConfig(level=log_level, format='%(asctime)s %(levelname)s %(name)s %(message)s')
@@ -361,9 +397,9 @@ def log_borg_version() -> None:
   try:
     cmd_version_result = subprocess.run(['borg', '--version'], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     if cmd_version_result.returncode != 0:
-      logging.error("Failed to run \"borg --version\".\n" + ic.format({"exit": cmd_version_result.returncode, "stderr": cmd_version_result.stderr.decode(), "stdout": cmd_version_result.stdout.decode()}))
+      logging.error("Failed to run \"borg --version\".\n" + ic.format({"exit": cmd_version_result.returncode, "stderr": cmd_version_result.stderr.decode("utf-8"), "stdout": cmd_version_result.stdout.decode("utf-8")}))
       sys.exit(1)
-    logging.info(f"Borg version: {cmd_version_result.stdout.decode().strip()}")
+    logging.info(f"Borg version: {cmd_version_result.stdout.decode('utf-8').strip()}")
   except Exception as e:
     logging.exception(f"Failed to run \"borg --version\". Is it installed?")
     sys.exit(1)
@@ -371,23 +407,27 @@ def log_borg_version() -> None:
 class BackupManager:
   def __init__(self, config_args):
     self.config_args = config_args
-    self.load_config_file()
+    self._load_config_file()
+    self._load_extract_config(config_args)
     self.repos = []
     for repo_name in self.get_repo_names():
       self.repos.append(Repo(repo_name, self.config, config_args))
+    self.should_exit = False
   async def run(self):
-    while True:
+    while not self.should_exit:
       for repo in self.repos:
         await repo.run_backup()
-      next_run = min(repo.next_run if repo.next_run != None else datetime.max for repo in self.repos)
-      next_run = max(next_run, datetime.now() + timedelta(hours=12))
-      secs = (next_run - datetime.now()).total_seconds()
-      logging.debug(f"Sleeping until {next_run.strftime('%Y/%m/%d %H:%M:%S')} ({secs} seconds)")
-      await asyncio.sleep(secs)
+      await asyncio.sleep(60)
   async def run_backup(self):
     for repo in self.repos:
       await repo.run_backup_now()
-  def load_config_file(self) -> None:
+  async def run_cmd(self, cmd):
+    for repo in self.repos:
+      await repo.run_cmd(cmd)
+  async def break_locks(self):
+    for repo in self.repos:
+      await repo.break_locks()
+  def _load_config_file(self) -> None:
     try:
       logging.info(f"Reading config file: \"{self.config_args.config_file}\"")
       with open(self.config_args.config_file, 'r') as f:
@@ -396,25 +436,53 @@ class BackupManager:
     except Exception as e:
       logging.exception(f"Failed to read config file \"{self.config_args.config_file}\"")
       sys.exit(1)
+  def _load_extract_config(self, config_args) -> None:
+    logger = logging.getLogger()
+    logger.setLevel(self._load_config_key('log_level', validate_log_level(logger)).upper())
+  def _load_config_key(self, key, validator=None, default=None):
+    general_config = self.config['repo_general']
+
+    config_value = None
+    if hasattr(self.config_args, key):
+      config_value = getattr(self.config_args, key)
+    elif key in general_config:
+      config_value = general_config[key]
+    elif key in repo_general_defaults:
+      config_value = repo_general_defaults[key]
+    elif default is not None:
+      config_value = default
+    else:
+      logging.error(f"Failed to find config key \"{key}\"")
+      sys.exit(1)
+
+    if validator is not None:
+      if not validator(config_value):
+        logging.error(f"Config key \"{key}\" failed validation")
+        sys.exit(1)
+    return config_value
   def get_repo_names(self) -> list[str]:
     return self.config['repo'].keys()
   async def shutdown(self):
     # Gracefully stop running tasks and subprocesses
     for repo in self.repos:
         await repo.stop_subprocess()
-    asyncio.get_event_loop().stop()
+    self.should_exit = True
 
 def signal_handler(signum, frame):
     if signum == signal.SIGTERM or signum == signal.SIGINT or signum == signal.SIGQUIT:
       logging.info(f"Received signal {signal.strsignal(signum)}, initiating graceful shutdown...")
       asyncio.create_task(backup_manager.shutdown())
 
-if __name__ == "__main__":
+async def main():
   parser = argparse.ArgumentParser(description='Backup Manager')
   parser.add_argument('-c', '--config', help='Path to config file', required=True)
   parser.add_argument('--dry-run', help='Dry run', action='store_true')
   parser.add_argument('--log-level', help='Log level', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], default='INFO')
-  parser.add_argument('--single-run-now', help='Run backup once. Begin immediately.', action='store_true')
+
+  run_group = parser.add_mutually_exclusive_group()
+  run_group.add_argument('--run-break-locks', help='Break locks', action='store_true')
+  run_group.add_argument('--run-single-cmd-now', help='Run a custom borg command once. Begin immediately.', nargs=argparse.REMAINDER)
+  run_group.add_argument('--run-backup-once', help='Run backup once. Begin immediately.', action='store_true')
   args = parser.parse_args()
 
   config_args = mock.Mock()
@@ -433,10 +501,19 @@ if __name__ == "__main__":
   signal.signal(signal.SIGINT, signal_handler)
   signal.signal(signal.SIGQUIT, signal_handler)
 
-  if args.single_run_now:
-    logging.info("Running single run now")
-    asyncio.run(backup_manager.run_backup())
+  if args.run_break_locks:
+    logging.warning("Breaking locks on all repos")
+    await backup_manager.break_locks()
+  if args.run_single_cmd_now:
+    logging.info("Running single cmd on all repos")
+    await backup_manager.run_cmd(args.run_single_cmd_now)
+  elif args.run_backup_once:
+    logging.info("Running single backup on all repos")
+    await backup_manager.run_backup()
   else:
     logging.info("Running as foreground daemon")
-    asyncio.run(backup_manager.run())
+    await backup_manager.run()
   logging.debug("__main__ finished")
+
+if __name__ == "__main__":
+  asyncio.run(main())

@@ -3,7 +3,7 @@
 ## Todo
 
 * improve this readme
-* improve logging and add option to config to change log level
+* improve logging (syslog and log to file, rotation)
 * Forensics
 * `*_add/*_rem for config keys to append/remove`
 * Prometheus metrics
@@ -11,7 +11,7 @@
 * Support hooks (pre/post backup)
 * Handle ssh host keys better
 * Support handling SIGHUP to reload config
-* Fix log encoding `b' and \n` proper utf decoding
+* Test Fix log encoding `b' and \n` proper utf decoding
 
 ## Information
 
