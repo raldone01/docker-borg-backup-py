@@ -4,28 +4,16 @@ import toml
 import sys
 import os
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime
 from croniter import croniter
-import time
 import unittest.mock as mock
-import stat
 from icecream import ic
 import asyncio
 import signal
-from utils import read_stream, td_format, validate_log_level
 
-repo_general_defaults = {
-  'cron_interval': 'R 0 * * *',
-  'keep_daily': 7,
-  'keep_weekly': 4,
-  'keep_monthly': 2,
-  'keep_yearly': 1,
-  'compact': True,
-  'prune': True,
-  'dry_run': False,
-  'log_level': 'INFO',
-  'enabled': True,
-}
+from utils import read_stream, td_format
+from config_validation import Validation
+from config_defaults import repo_general_defaults
 
 borg_path = '/usr/bin/borg'
 
@@ -39,99 +27,39 @@ class Repo:
 
   def _load_extract_config(self, config, config_args):
     self.logger.debug(f"Loading config for repo \"{self.name}\"")
+    validation = Validation(self.logger)
 
-    self.logger.setLevel(self._load_config_key(config, 'log_level', validate_log_level(self.logger), config_args=config_args).upper())
+    self.logger.setLevel(self._load_config_key(config, 'log_level', Validation.validate_log_level(self.logger), config_args=config_args).upper())
 
     # cron str
-    def validate_cron_interval(cron_interval):
-      if cron_interval == False:
-        return True
-      if not croniter.is_valid(cron_interval):
-        self.logger.error(f"Cron interval \"{cron_interval}\" is not valid")
-        return False
-      return True
-    self.cron_interval_str = self._load_config_key(config, 'cron_interval', validate_cron_interval)
+    self.cron_interval_str = self._load_config_key(config, 'cron_interval', validation.validate_cron_interval)
     if self.cron_interval_str != False:
       self.next_run = croniter(self.cron_interval_str, datetime.now()).get_next(datetime)
 
-    def validate_keep_int(keep_int):
-      if not isinstance(keep_int, int):
-        self.logger.error(f"Keep value is not an int")
-        return False
-      if keep_int < 0:
-        self.logger.error(f"Keep value is less than 0")
-        return False
-      return True
-    self.keep_daily = self._load_config_key(config, 'keep_daily', validate_keep_int)
-    self.keep_weekly = self._load_config_key(config, 'keep_weekly', validate_keep_int)
-    self.keep_monthly = self._load_config_key(config, 'keep_monthly', validate_keep_int)
-    self.keep_yearly = self._load_config_key(config, 'keep_yearly', validate_keep_int)
+    self.keep_daily = self._load_config_key(config, 'keep_daily', validation.validate_int_positive)
+    self.keep_weekly = self._load_config_key(config, 'keep_weekly', validation.validate_int_positive)
+    self.keep_monthly = self._load_config_key(config, 'keep_monthly', validation.validate_int_positive)
+    self.keep_yearly = self._load_config_key(config, 'keep_yearly', validation.validate_int_positive)
 
-    def validate_bool(bool_value):
-      if not isinstance(bool_value, bool):
-        self.logger.error(f"Value is not a bool")
-        return False
-      return True
-    self.prune = self._load_config_key(config, 'prune', validate_bool)
-    self.compact = self._load_config_key(config, 'compact', validate_bool)
+    self.prune = self._load_config_key(config, 'prune', validation.validate_bool)
+    self.compact = self._load_config_key(config, 'compact', validation.validate_bool)
 
-    def validate_pass_file(file_path):
-      # check if file exists and is readable
-      if not os.path.isfile(file_path):
-        self.logger.error(f"File \"{file_path}\" does not exist")
-        return False
-      if not os.access(file_path, os.R_OK):
-        self.logger.error(f"File \"{file_path}\" is not readable")
-        return False
-      return True
-    borg_pass_file = self._load_config_key(config, 'borg_pass_file', validate_pass_file)
+    borg_pass_file = self._load_config_key(config, 'borg_pass_file', validation.validate_pass_file)
     with open(borg_pass_file, 'r') as f:
       self.borg_passphrase = f.read().strip()
 
-    self.enabled = self._load_config_key(config, 'enabled', validate_bool)
+    self.enabled = self._load_config_key(config, 'enabled', validation.validate_bool)
 
-    def validate_ssh_key(file_path):
-      if not validate_pass_file(file_path):
-        return False
-      # check if the file (600) and folder (700) permissions are correct
+    self.ssh_key_file = self._load_config_key(config, 'ssh_key_file', validation.validate_ssh_key, None)
 
-      # Get file and folder permissions
-      file_permissions = os.stat(file_path).st_mode
-      folder_permissions = os.stat(os.path.dirname(file_path)).st_mode
+    self.repo_url = self._load_config_key(config, 'repo_url', validation.validate_string)
 
-      # Check if file permissions are 600
-      if not bool(file_permissions & stat.S_IRUSR) or not bool(file_permissions & stat.S_IWUSR):
-        self.logger.error(f"File \"{file_path}\" permissions are not 600")
-        return False
+    self.files_include = self._load_config_key(config, 'files_include', lambda x: validation.validate_list_of(x, validation.validate_string))
+    self.files_exclude = self._load_config_key(config, 'files_exclude', lambda x: validation.validate_list_of(x, validation.validate_string))
 
-      # Check if folder permissions are 700
-      if not bool(folder_permissions & stat.S_IRUSR) or not bool(folder_permissions & stat.S_IWUSR) or not bool(folder_permissions & stat.S_IXUSR):
-        self.logger.error(f"Folder \"{os.path.dirname(file_path)}\" permissions are not 700")
-        return False
-      return True
-    self.ssh_key_file = self._load_config_key(config, 'ssh_key_file', validate_ssh_key, None)
+    self.hostname = self._load_config_key(config, 'hostname', validation.validate_string)
 
-    def validate_string(string):
-      if not isinstance(string, str):
-        self.logger.error(f"Value is not a string")
-        return False
-      return True
-    self.repo_url = self._load_config_key(config, 'repo_url', validate_string)
-
-    def validate_list_of(liste, item_validator):
-      if not isinstance(liste, list):
-        self.logger.error(f"Value is not a list")
-        return False
-      for item in liste:
-        if not item_validator(item):
-          return False
-      return True
-    self.files_include = self._load_config_key(config, 'files_include', lambda x: validate_list_of(x, validate_string))
-    self.files_exclude = self._load_config_key(config, 'files_exclude', lambda x: validate_list_of(x, validate_string))
-
-    self.hostname = self._load_config_key(config, 'hostname', validate_string)
-
-    self.dry_run = self._load_config_key(config, 'dry_run', validate_bool)
+    self.dry_run = self._load_config_key(config, 'dry_run', validation.validate_bool)
     if config_args.dry_run:
       self.dry_run = True
     if self.dry_run:
@@ -164,7 +92,7 @@ class Repo:
 
   def _not_enabled(self):
     if not self.enabled:
-      self.logger.debug(f"Skipping repo \"{self.name}\" is not enabled.")
+      self.logger.debug(f"Skipping repo \"{self.name}\" is disabled.")
       return True
     return False
 

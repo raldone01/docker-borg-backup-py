@@ -55,7 +55,7 @@ files_exclude = [
 [hash_deep]
 enabled = true
 algorithm = "sha512"
-output = "/forensics/"
+output_folder = "/forensics/"
 files_include = ["*"]
 files_exclude = []
 
