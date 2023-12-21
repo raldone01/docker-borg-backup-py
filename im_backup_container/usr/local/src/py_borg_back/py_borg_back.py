@@ -332,7 +332,7 @@ class BackupManager:
       sys.exit(1)
   def _load_extract_config(self, config_args) -> None:
     logger = logging.getLogger()
-    logger.setLevel(self._load_config_key('log_level', validate_log_level(logger)).upper())
+    logger.setLevel(self._load_config_key('log_level', Validation.validate_log_level(logger)).upper())
   def _load_config_key(self, key, validator=None, default=None):
     general_config = self.config['repo_general']
 

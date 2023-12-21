@@ -1,4 +1,4 @@
-import croniter
+from croniter import croniter
 import os
 import stat
 import logging
