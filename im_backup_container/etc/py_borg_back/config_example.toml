@@ -37,6 +37,7 @@ files_exclude = [
   'home/*/.local/share/containers/cache',
   'home/*/.local/lib/python*',
   'home/*/.local/lib/pipx',
+  'home/*/**/.local/share/Trash',
   'home/*/.config/Code - Insiders',
   'home/*/.config/Code',
   'home/*/**/build/cache',
