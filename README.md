@@ -4,14 +4,12 @@
 
 * improve this readme
 * improve logging (syslog and log to file, rotation)
-* Forensics
 * `*_add/*_rem for config keys to append/remove`
 * Prometheus metrics
 * Support more borg options
 * Support hooks (pre/post backup)
 * Handle ssh host keys better
 * Support handling SIGHUP to reload config
-* Test Fix log encoding `b' and \n` proper utf decoding
 
 ## Information
 

@@ -175,8 +175,8 @@ class Repo:
     self.next_run = croniter(self.cron_interval_str, datetime.now()).get_next(datetime)
     return ret
 
-  async def run_backup_now(self):
-    ret_create = await self.run_backup_create()
+  async def run_backup_now(self, recreate=False):
+    ret_create = await self.run_backup_create(recreate)
     ret_prune = await self.run_backup_prune()
     ret_compact = await self.run_backup_compact()
     return ret_create + ret_prune + ret_compact
@@ -187,14 +187,14 @@ class Repo:
       self.current_subprocess.terminate()
       await self.current_subprocess.wait()
 
-  async def run_backup_create(self):
+  async def run_backup_create(self, recreate=False):
     if self._not_enabled():
       return 0
     self.logger.info(f"Running backup create for repo \"{self.name}\"")
 
     cmd = [
       borg_path,
-      'create',
+      recreate and 'recreate' or 'create',
       '--filter', 'AMEds',
       '--list',
       '--stats',
@@ -312,15 +312,16 @@ class BackupManager:
       for repo in self.repos:
         await repo.run_backup()
       await asyncio.sleep(60)
-  async def run_backup(self):
+  async def run_backup_now(self, recreate=False):
     for repo in self.repos:
-      await repo.run_backup_now()
+      await repo.run_backup_now(recreate)
   async def run_cmd(self, cmd):
     for repo in self.repos:
       await repo.run_cmd(cmd)
   async def break_locks(self):
     for repo in self.repos:
-      await repo.break_locks()
+      if repo.enabled:
+        await repo.break_locks()
   def _load_config_file(self) -> None:
     try:
       logging.info(f"Reading config file: \"{self.config_args.config_file}\"")
@@ -377,6 +378,7 @@ async def main():
   run_group.add_argument('--run-break-locks', help='Break locks', action='store_true')
   run_group.add_argument('--run-single-cmd-now', help='Run a custom borg command once. Begin immediately.', nargs=argparse.REMAINDER)
   run_group.add_argument('--run-backup-once', help='Run backup once. Begin immediately.', action='store_true')
+  run_group.add_argument('--run-recreate-once', help='Run backup recreate once. Begin immediately.', action='store_true')
   args = parser.parse_args()
 
   config_args = mock.Mock()
@@ -403,7 +405,10 @@ async def main():
     await backup_manager.run_cmd(args.run_single_cmd_now)
   elif args.run_backup_once:
     logging.info("Running single backup on all repos")
-    await backup_manager.run_backup()
+    await backup_manager.run_backup_now()
+  elif args.run_recreate_once:
+    logging.info("Running single recreate on all repos")
+    await backup_manager.run_backup_now(True)
   else:
     logging.info("Running as foreground daemon")
     await backup_manager.run()
