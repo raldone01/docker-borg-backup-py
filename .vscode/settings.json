@@ -1,0 +1,6 @@
+{
+  "autopep8.args": [
+    "--indent-size=2",
+    "--ignore=E121"
+  ]
+}

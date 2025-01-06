@@ -14,4 +14,7 @@ RUN --mount=type=cache,id=pip,sharing=locked,target=/root/.cache/pip \
   && python3 -m venv venv \
   && venv/bin/pip install -r requirements.txt
 
+ENV ENV="/root/.ashrc"
+RUN echo ". /usr/local/src/py_borg_back/venv/bin/activate" >> "$ENV"
+
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -3,7 +3,7 @@ services:
   backup_container:
     restart: unless-stopped
     build:
-      context: im_backup_container
+      context: rootfs
     init: true
     volumes:
       - ./test_files:/host:ro
