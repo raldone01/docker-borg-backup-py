@@ -3,6 +3,7 @@ import os
 import stat
 import logging
 
+
 class Validation:
   def __init__(self, logger):
     self.logger = logger
@@ -56,7 +57,8 @@ class Validation:
 
     # Check if folder permissions are 700
     if not bool(folder_permissions & stat.S_IRUSR) or not bool(folder_permissions & stat.S_IWUSR) or not bool(folder_permissions & stat.S_IXUSR):
-      self.logger.error(f"Folder \"{os.path.dirname(file_path)}\" permissions are not 700")
+      self.logger.error(f"Folder \"{os.path.dirname(
+        file_path)}\" permissions are not 700")
       return False
     return True
 

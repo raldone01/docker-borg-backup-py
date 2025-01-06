@@ -120,15 +120,20 @@ class Repo:
     repo_config = config["repo"][self.name]
 
     config_value = None
-    if config_args is not None and hasattr(config_args, key):
+    if config_args is not None and hasattr(config_args, key) and getattr(self.config_args, key) is not None:
+      # logging.debug(f'Using config arg "{key}"')
       config_value = getattr(config_args, key)
     elif key in repo_config:
+      # logging.debug(f'Using repo config key "{key}"')
       config_value = repo_config[key]
     elif key in general_config:
+      # logging.debug(f'Using general config key "{key}"')
       config_value = general_config[key]
     elif key in repo_general_defaults:
+      # logging.debug(f'Using general defaults key "{key}"')
       config_value = repo_general_defaults[key]
     elif default is not None:
+      # logging.debug(f'Using default value for "{key}"')
       config_value = default
     else:
       self.logger.error(
@@ -454,13 +459,17 @@ class BackupManager:
     general_config = self.config["repo_general"]
 
     config_value = None
-    if hasattr(self.config_args, key):
+    if hasattr(self.config_args, key) and getattr(self.config_args, key) is not None:
+      # logging.debug(f'Using config arg "{key}"')
       config_value = getattr(self.config_args, key)
     elif key in general_config:
+      # logging.debug(f'Using general config key "{key}"')
       config_value = general_config[key]
     elif key in repo_general_defaults:
+      # logging.debug(f'Using general defaults key "{key}"')
       config_value = repo_general_defaults[key]
     elif default is not None:
+      # logging.debug(f'Using default value for "{key}"')
       config_value = default
     else:
       logging.error(f'Failed to find config key "{key}"')
@@ -502,7 +511,6 @@ async def main():
       "--log-level",
       help="Log level",
       choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-      default="INFO",
   )
 
   run_group = parser.add_mutually_exclusive_group()

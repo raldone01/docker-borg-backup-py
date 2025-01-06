@@ -1,3 +1,4 @@
 test_files/
 secrets/
 container_volumes/
+__pycache__/
