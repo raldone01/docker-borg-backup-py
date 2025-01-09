@@ -1,9 +1,9 @@
 #!/bin/ash
 
-set -eu
+set -eux
 set -o pipefail
 
-chmod 700 /root/.ssh && chmod 600 /root/.ssh/*
+chmod 700 /root/.ssh && chmod 600 /root/.ssh/* || true
 
 . /usr/local/src/py_borg_back/venv/bin/activate
 # We can use exec here since the docker container is launched with --init true

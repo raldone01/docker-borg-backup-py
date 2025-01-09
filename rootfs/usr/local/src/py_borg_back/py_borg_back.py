@@ -120,7 +120,7 @@ class Repo:
     repo_config = config["repo"][self.name]
 
     config_value = None
-    if config_args is not None and hasattr(config_args, key) and getattr(self.config_args, key) is not None:
+    if config_args is not None and hasattr(config_args, key) and getattr(config_args, key) is not None:
       # logging.debug(f'Using config arg "{key}"')
       config_value = getattr(config_args, key)
     elif key in repo_config:
@@ -239,7 +239,7 @@ class Repo:
       return 0
 
     now = datetime.now()
-    if now < self.next_run and self.next_run_message_time + timedelta(minutes=10) < now:
+    if now.timestamp() < self.next_run.timestamp() and (self.next_run_message_time + timedelta(minutes=10)).timestamp() < now.timestamp():
       self.logger.debug(
         f'Not time to run "{self.name}" yet (next run: "{self.next_run.strftime('%Y/%m/%d %H:%M:%S')}"), skipping'  # nopep8
       )
