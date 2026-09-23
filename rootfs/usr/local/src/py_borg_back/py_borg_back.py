@@ -239,12 +239,19 @@ class Repo:
       return 0
 
     now = datetime.now()
-    if now.timestamp() < self.next_run.timestamp() and (self.next_run_message_time + timedelta(minutes=10)).timestamp() < now.timestamp():
-      self.logger.debug(
+
+    if (self.next_run_message_time + timedelta(minutes=10)).timestamp() < now.timestamp():
+      # only log every 10 minutes
+      self.logger.info(
         f'Not time to run "{self.name}" yet (next run: "{self.next_run.strftime('%Y/%m/%d %H:%M:%S')}"), skipping'  # nopep8
       )
       self.next_run_message_time = now
+
+    if now.timestamp() < self.next_run.timestamp():
       return 0
+
+    self.logger.debug(
+      f'Running backup for repo "{self.name}" at {now.strftime("%Y/%m/%d %H:%M:%S")} because next run is "{self.next_run.strftime("%Y/%m/%d %H:%M:%S")}"')
 
     ret = await self.run_backup_now()
     self.next_run = croniter(self.cron_interval_str, datetime.now()).get_next(
